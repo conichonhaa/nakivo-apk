@@ -61,7 +61,7 @@ data class UiState(
     val formMode: String = SettingsStore.MODE_WEB,
     val webActive: Boolean = false,
     val webUrl: String = SettingsStore.DEFAULT_URL,
-    val webWidth: Int = 1100,
+    val webWidth: Int = 900,
     val webLandscape: Boolean = false,
     val webPin: String? = null,
 )

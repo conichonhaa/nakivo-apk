@@ -63,7 +63,7 @@ class SettingsStore(context: Context) {
 
     /** Largeur virtuelle (px CSS) de mise en page de l'interface, réduite ensuite à l'écran. */
     var webWidth: Int
-        get() = prefs.getInt(KEY_WEB_WIDTH, 1100)
+        get() = prefs.getInt(KEY_WEB_WIDTH, 900)
         set(value) = prefs.edit().putInt(KEY_WEB_WIDTH, value).apply()
 
     var webLandscape: Boolean

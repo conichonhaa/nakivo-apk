@@ -2,6 +2,7 @@ package fr.conichonhaa.nakivo.ui.web
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
@@ -17,6 +18,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,7 +54,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -61,7 +62,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -74,6 +74,7 @@ import java.io.ByteArrayInputStream
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.text.DateFormat
+import kotlin.math.roundToInt
 
 private class PendingSsl(
     val handler: SslErrorHandler,
@@ -82,38 +83,60 @@ private class PendingSsl(
     val validUntil: String,
 )
 
-/** Largeurs de mise en page proposées. 0 = laisser la page gérer l'écran du téléphone. */
+/** Largeurs de mise en page proposées (px CSS). 0 = largeur réelle du téléphone. */
 private val WIDTH_PRESETS = listOf(
     0 to "Natif (largeur du téléphone)",
-    800 to "Compact (800 px)",
-    1100 to "Standard (1100 px)",
-    1400 to "Large (1400 px)",
+    700 to "Compact (700 px)",
+    900 to "Standard (900 px)",
+    1100 to "Large (1100 px)",
+    1300 to "Très large (1300 px)",
 )
 
 /**
  * Adaptation mobile : l'interface NAKIVO est pensée pour un écran de PC.
- * On lui fait croire que la fenêtre fait `w` px de large (sa mise en page reste
- * complète et lisible), puis on réduit l'ensemble pour tenir dans la largeur
- * du téléphone. Le zoom à deux doigts reste disponible.
+ * La WebView est réellement dimensionnée à `virtualWidthDp` de large (et à la
+ * hauteur correspondante), puis réduite par Android pour remplir l'écran.
+ * La page voit donc une vraie fenêtre de bureau qui occupe toute la hauteur,
+ * et les touchers sont convertis automatiquement par le système.
  */
-private fun viewportJs(w: Int): String {
-    val content = if (w <= 0) "'width=device-width, initial-scale=1, maximum-scale=4, user-scalable=yes'"
-    else "'width=$w, initial-scale=' + s + ', minimum-scale=' + (s / 2) + ', maximum-scale=4, user-scalable=yes'"
-    return """
-        (function () {
-          try {
-            var s = Math.min(1, (screen.width || window.outerWidth) / ${if (w <= 0) 1 else w});
-            var m = document.querySelector('meta[name="viewport"]');
-            if (!m) {
-              m = document.createElement('meta');
-              m.name = 'viewport';
-              (document.head || document.documentElement).appendChild(m);
+private class ScaledWebContainer(context: Context, val webView: WebView) : FrameLayout(context) {
+
+    var virtualWidthDp: Int = 900
+        set(value) {
+            if (field != value) {
+                field = value
+                requestLayout()
             }
-            var c = $content;
-            if (m.content !== c) { m.content = c; }
-          } catch (e) {}
-        })();
-    """.trimIndent()
+        }
+
+    init {
+        clipChildren = true
+        webView.pivotX = 0f
+        webView.pivotY = 0f
+        addView(webView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val w = MeasureSpec.getSize(widthMeasureSpec)
+        val h = MeasureSpec.getSize(heightMeasureSpec)
+        setMeasuredDimension(w, h)
+
+        val virtualPx = (virtualWidthDp * resources.displayMetrics.density).roundToInt()
+        val scale = if (virtualWidthDp <= 0 || w <= 0 || virtualPx <= w) 1f else w.toFloat() / virtualPx
+        val childW = if (scale == 1f) w else virtualPx
+        val childH = if (scale == 1f) h else (h / scale).roundToInt()
+
+        webView.measure(
+            MeasureSpec.makeMeasureSpec(childW, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(childH, MeasureSpec.EXACTLY),
+        )
+        webView.scaleX = scale
+        webView.scaleY = scale
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        webView.layout(0, 0, webView.measuredWidth, webView.measuredHeight)
+    }
 }
 
 private fun x509Of(ssl: SslCertificate?): X509Certificate? {
@@ -131,9 +154,7 @@ private fun x509Of(ssl: SslCertificate?): X509Certificate? {
 fun WebDashboardScreen(state: UiState, vm: AppViewModel) {
     val context = LocalContext.current
     val activity = context as? Activity
-    val orientation = LocalConfiguration.current.orientation
 
-    val widthState = rememberUpdatedState(state.webWidth)
     val pinState = rememberUpdatedState(state.webPin)
     val serverHost = remember(state.webUrl) { Uri.parse(state.webUrl).host }
 
@@ -148,8 +169,9 @@ fun WebDashboardScreen(state: UiState, vm: AppViewModel) {
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
-                useWideViewPort = true
-                loadWithOverviewMode = true
+                // 1 px CSS = 1 dp : la largeur vue par la page est celle de la WebView.
+                useWideViewPort = false
+                loadWithOverviewMode = false
                 setSupportZoom(true)
                 builtInZoomControls = true
                 displayZoomControls = false
@@ -161,8 +183,6 @@ fun WebDashboardScreen(state: UiState, vm: AppViewModel) {
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView, newProgress: Int) {
                     progress = newProgress
-                    // Réinjecte tôt pendant le chargement pour éviter un « saut » d'affichage.
-                    view.evaluateJavascript(viewportJs(widthState.value), null)
                 }
             }
 
@@ -172,7 +192,6 @@ fun WebDashboardScreen(state: UiState, vm: AppViewModel) {
                 }
 
                 override fun onPageFinished(view: WebView, url: String?) {
-                    view.evaluateJavascript(viewportJs(widthState.value), null)
                     CookieManager.getInstance().flush()
                 }
 
@@ -218,10 +237,7 @@ fun WebDashboardScreen(state: UiState, vm: AppViewModel) {
         }
     }
 
-    // Changement de largeur ou rotation : on recalcule l'échelle.
-    LaunchedEffect(state.webWidth, orientation) {
-        webView.evaluateJavascript(viewportJs(state.webWidth), null)
-    }
+    val container = remember { ScaledWebContainer(context, webView) }
 
     // Verrouillage paysage optionnel.
     DisposableEffect(state.webLandscape) {
@@ -348,7 +364,11 @@ fun WebDashboardScreen(state: UiState, vm: AppViewModel) {
         }
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize())
+            AndroidView(
+                factory = { container },
+                update = { it.virtualWidthDp = state.webWidth },
+                modifier = Modifier.fillMaxSize(),
+            )
 
             pageError?.let { msg ->
                 Card(
