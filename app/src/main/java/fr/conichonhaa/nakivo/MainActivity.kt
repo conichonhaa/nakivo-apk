@@ -51,6 +51,7 @@ import fr.conichonhaa.nakivo.ui.screens.JobsScreen
 import fr.conichonhaa.nakivo.ui.screens.LoginScreen
 import fr.conichonhaa.nakivo.ui.screens.StorageScreen
 import fr.conichonhaa.nakivo.ui.theme.NakivoTheme
+import fr.conichonhaa.nakivo.ui.web.WebDashboardScreen
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -62,7 +63,11 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize()) {
                     val vm: AppViewModel = viewModel()
                     val state by vm.state.collectAsStateWithLifecycle()
-                    if (state.loggedIn) MainScreen(state, vm) else LoginScreen(state, vm)
+                    when {
+                        state.webActive -> WebDashboardScreen(state, vm)
+                        state.loggedIn -> MainScreen(state, vm)
+                        else -> LoginScreen(state, vm)
+                    }
                 }
             }
         }

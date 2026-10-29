@@ -2,6 +2,7 @@ package fr.conichonhaa.nakivo.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +20,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -32,6 +34,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import fr.conichonhaa.nakivo.data.SettingsStore
 import fr.conichonhaa.nakivo.ui.AppViewModel
 import fr.conichonhaa.nakivo.ui.ErrorBanner
 import fr.conichonhaa.nakivo.ui.UiState
@@ -63,6 +66,26 @@ fun LoginScreen(state: UiState, vm: AppViewModel) {
         )
         Spacer(Modifier.height(8.dp))
 
+        val web = state.formMode == SettingsStore.MODE_WEB
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = web,
+                onClick = { vm.setFormMode(SettingsStore.MODE_WEB) },
+                label = { Text("Interface web") },
+            )
+            FilterChip(
+                selected = !web,
+                onClick = { vm.setFormMode(SettingsStore.MODE_API) },
+                label = { Text("Tableau natif (API)") },
+            )
+        }
+        Text(
+            if (web) "Affiche l'interface du Director, adaptée à l'écran du téléphone. Fonctionne avec toutes les licences."
+            else "Écrans natifs alimentés par l'API HTTP. Nécessite une licence NAKIVO Enterprise Plus.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
         OutlinedTextField(
             value = state.formUrl,
             onValueChange = vm::onUrlChange,
@@ -72,6 +95,19 @@ fun LoginScreen(state: UiState, vm: AppViewModel) {
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next),
             modifier = Modifier.fillMaxWidth(),
         )
+        if (web) {
+            state.loginError?.let { ErrorBanner(it) }
+            Button(onClick = vm::openWeb, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                Text("Ouvrir l'interface")
+            }
+            Text(
+                "Tu te connecteras ensuite avec ton compte NAKIVO, la session est conservée sur le téléphone.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@Column
+        }
+
         OutlinedTextField(
             value = state.formUser,
             onValueChange = vm::onUserChange,

@@ -57,6 +57,13 @@ data class UiState(
     val debugOutput: String = "",
     val debugRunning: Boolean = false,
     val refreshSeconds: Int = 60,
+    // Mode Interface web
+    val formMode: String = SettingsStore.MODE_WEB,
+    val webActive: Boolean = false,
+    val webUrl: String = SettingsStore.DEFAULT_URL,
+    val webWidth: Int = 1100,
+    val webLandscape: Boolean = false,
+    val webPin: String? = null,
 )
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -70,14 +77,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         val saved = store.load()
-        _state.update {
-            it.copy(
-                formUrl = store.lastUrl(),
-                formUser = store.lastUser(),
-                refreshSeconds = store.refreshSeconds,
-            )
-        }
-        if (saved != null) {
+        _state.update { baseState() }
+        if (store.mode == SettingsStore.MODE_WEB) {
+            if (store.webActive) _state.update { it.copy(webActive = true) }
+        } else if (saved != null) {
             client = NakivoClient(saved)
             _state.update { it.copy(loggedIn = true) }
         }
@@ -99,7 +102,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         // On réutilise l'empreinte déjà validée si le serveur n'a pas changé.
         val previous = store.load()
         val pin = previous?.pinnedSha256?.takeIf { previous.baseUrl == url }
-        tryLogin(ServerConfig(url, s.formUser.trim(), s.formPassword, pin))
+        store.mode = SettingsStore.MODE_API
+        tryLogin(ServerConfig(url, s.formUser.trim(), s.formPassword, pin ?: store.pin.takeIf { store.lastUrl() == url }))
     }
 
     fun trustPendingCert() {
@@ -146,13 +150,55 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         refreshJob?.cancel()
         store.forgetPassword()
         client = null
-        _state.update {
-            UiState(
-                formUrl = store.lastUrl(),
-                formUser = store.lastUser(),
-                refreshSeconds = store.refreshSeconds,
-            )
+        _state.update { baseState() }
+    }
+
+    private fun baseState() = UiState(
+        formUrl = store.lastUrl(),
+        formUser = store.lastUser(),
+        refreshSeconds = store.refreshSeconds,
+        formMode = store.mode,
+        webUrl = store.lastUrl(),
+        webWidth = store.webWidth,
+        webLandscape = store.webLandscape,
+        webPin = store.pin,
+    )
+
+    // ---------------------------------------------------- mode Interface web
+
+    fun setFormMode(mode: String) = _state.update { it.copy(formMode = mode, loginError = null) }
+
+    fun openWeb() {
+        val url = normalizeUrl(_state.value.formUrl)
+        if (url.isBlank()) {
+            _state.update { it.copy(loginError = "Renseigne l'adresse du Director.") }
+            return
         }
+        store.saveUrl(url)
+        store.mode = SettingsStore.MODE_WEB
+        store.webActive = true
+        _state.update { baseState().copy(webActive = true) }
+    }
+
+    /** Retour à l'écran d'accueil (changer de serveur ou de mode). */
+    fun closeWeb() {
+        store.webActive = false
+        _state.update { baseState() }
+    }
+
+    fun setWebWidth(width: Int) {
+        store.webWidth = width
+        _state.update { it.copy(webWidth = width) }
+    }
+
+    fun setWebLandscape(on: Boolean) {
+        store.webLandscape = on
+        _state.update { it.copy(webLandscape = on) }
+    }
+
+    fun trustWebCert(fingerprint: String) {
+        store.pin = fingerprint
+        _state.update { it.copy(webPin = fingerprint) }
     }
 
     // --------------------------------------------------------------- données
