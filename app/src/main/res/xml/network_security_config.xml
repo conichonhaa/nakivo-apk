@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Serveur de homelab : HTTP autorisé si besoin. En HTTPS, le certificat
+     auto-signé est géré par épinglage (empreinte SHA-256 validée dans l'app). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
